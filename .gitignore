@@ -1,0 +1,15 @@
+# Blueprint screenshots
+/*.png
+
+# Utility scripts
+/parse_dump.py
+
+# Conversation logs
+/conversation-with-gemini.md
+
+# Claude Code config
+.claude/
+
+# Local directories
+/Gameplay/
+/Release/

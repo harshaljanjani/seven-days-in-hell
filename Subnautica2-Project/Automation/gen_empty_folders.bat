@@ -1,0 +1,1 @@
+DEL "F:\Subnautica2 Modding\Subnautica2\*.*" /S /Q

@@ -756,6 +756,22 @@ end
 
 -- Phase handler
 
+local function IsInMainLevel()
+    local inMain = false
+    pcall(function()
+        local actors = FindAllOf("ModActor_C")
+        if not actors then return end
+        for i = #actors, 1, -1 do
+            local ok, name = pcall(function() return actors[i]:GetFullName() end)
+            if ok and name and name:find("L_Main") then
+                inMain = true
+                return
+            end
+        end
+    end)
+    return inMain
+end
+
 RegisterConsoleCommandHandler("ee_phase", function(FullCommand, Parameters)
     if #Parameters < 1 then
         print("[EE] Usage: ee_phase <phase_number>\n")
@@ -765,6 +781,11 @@ RegisterConsoleCommandHandler("ee_phase", function(FullCommand, Parameters)
     local phaseNum = tonumber(Parameters[1])
     if not phaseNum or phaseNum < 0 or phaseNum > 4 then
         print(string.format("[EE] Invalid phase: %s\n", Parameters[1]))
+        return true
+    end
+
+    if not IsInMainLevel() then
+        print(string.format("[EE] Phase %d ignored - not in game level\n", phaseNum))
         return true
     end
 

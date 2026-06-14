@@ -12,6 +12,8 @@ local VisorPhase = 0
 local PhaseReceived = false
 local BootedWidgetName = nil
 local SurfaceElapsed = 0
+local LastKnownDay = nil
+local DayPulseActive = false
 
 local TOTAL_DAYS = 7
 local SURFACE_TICK = 1000
@@ -51,7 +53,7 @@ local HudNames = {
 local AllNames = {
     "VisorHeader", "VisorDay", "VisorPhase", "VisorIndex",
     "VisorThreat", "VisorRescue", "VisorSurfaceWarn",
-    "VisorTranceWarn", "VisorGlitchText",
+    "VisorTranceWarn", "VisorGlitchText", "VisorMessage",
 }
 
 local function FindRefs()
@@ -89,6 +91,7 @@ end
 local TextIndex = {
     VisorDay = 0, VisorPhase = 1, VisorIndex = 2,
     VisorThreat = 3, VisorRescue = 4, VisorSurfaceWarn = 5,
+    VisorMessage = 6,
 }
 
 local function GetWidget()
@@ -235,6 +238,122 @@ local function IsAboveWater()
     return above
 end
 
+-- Visor message queue (bottom screen text)
+local MessageQueue = {}
+local MessageActive = false
+local MESSAGE_HOLD = 5000
+local MESSAGE_GAP = 1500
+
+local PhaseLore = {
+    [0] = {
+        "Biosensor calibrated. Toxin monitoring enabled.",
+        "Mission: Document ecological anomaly on 4546B.",
+        "Rescue vessel dispatched. ETA: 7 days.",
+    },
+    [1] = {
+        "Seismic instability detected in deep thermal vent system.",
+        "Toxin bloom spreading through lower thermal layers.",
+        "Small fauna displacement detected in shallow zones.",
+    },
+    [2] = {
+        "Warning: Toxin concentration exceeding safe threshold.",
+        "Large predators ascending from deep territories.",
+        "Atmospheric contamination rising. Surface grace period reduced.",
+    },
+    [3] = {
+        "Critical: Ecosystem tipping point reached. Total collapse in progress.",
+        "Neurotoxin variant detected. Cognitive anomalies possible.",
+        "Cicada command signal degrading.",
+    },
+    [4] = {
+        "Emergency: Void boundary integrity failure confirmed.",
+        "Leviathan-class organisms breaching into inhabited waters.",
+        "Cicada command signal lost. Rescue ETA: 2 days. Survive.",
+    },
+}
+
+local DayLore = {
+    [6] = { "Faint signal detected. Rescue vessel on approach. ETA: 1 day." },
+    [7] = { "Rescue vessel in final approach. Prepare for extraction." },
+}
+
+local DatabankTitles = {
+    [0] = "Mission Briefing",
+    [1] = "Seismic Analysis",
+    [2] = "Predator Migration Report",
+    [3] = "Ecosystem Collapse Model",
+    [4] = "Void Breach Analysis",
+}
+
+local function QueueMessages(messages)
+    for _, msg in ipairs(messages) do
+        table.insert(MessageQueue, msg)
+    end
+end
+
+local function ProcessMessageQueue()
+    if MessageActive or #MessageQueue == 0 then return end
+    if not HudVisible or MenuHidden then
+        ExecuteWithDelay(1000, function() ExecuteInGameThread(ProcessMessageQueue) end)
+        return
+    end
+    MessageActive = true
+    local msg = table.remove(MessageQueue, 1)
+    SetText("VisorMessage", msg)
+    FadeElement("VisorMessage", 0, 0.9, 600, function()
+        ExecuteWithDelay(MESSAGE_HOLD, function()
+            ExecuteInGameThread(function()
+                FadeElement("VisorMessage", 0.9, 0, 600, function()
+                    MessageActive = false
+                    ExecuteWithDelay(MESSAGE_GAP, function()
+                        ExecuteInGameThread(ProcessMessageQueue)
+                    end)
+                end)
+            end)
+        end)
+    end)
+end
+
+local function SendDatabankNotification(title)
+    pcall(function()
+        local actors = FindAllOf("ModActor_C")
+        if not actors then return end
+        for i = #actors, 1, -1 do
+            local ok, name = pcall(function() return actors[i]:GetFullName() end)
+            if ok and name and name:find("L_Main") then
+                pcall(function() actors[i]:ShowEENotification(title, 4) end)
+                return
+            end
+        end
+    end)
+end
+
+local LastLorePhase = -1
+local LastLoreDay = -1
+
+local function TriggerPhaseLore(phase)
+    if phase == LastLorePhase then return end
+    LastLorePhase = phase
+    local messages = PhaseLore[phase]
+    if messages then
+        QueueMessages(messages)
+        ProcessMessageQueue()
+    end
+    local title = DatabankTitles[phase]
+    if title then
+        SendDatabankNotification(title)
+    end
+end
+
+local function TriggerDayLore(day)
+    if day == LastLoreDay then return end
+    LastLoreDay = day
+    local messages = DayLore[day]
+    if not messages then return end
+    QueueMessages(messages)
+    ProcessMessageQueue()
+end
+
 local function CountNearbyCreatures()
     local count = 0
     pcall(function()
@@ -289,11 +408,34 @@ local function DealSurfaceDamage()
     end)
 end
 
+local function PulseDayChange()
+    if DayPulseActive then return end
+    DayPulseActive = true
+    local pulses = 0
+    local maxPulses = 2
+    local function DoPulse()
+        pulses = pulses + 1
+        if pulses > maxPulses or not HudVisible or MenuHidden then
+            DayPulseActive = false
+            if VisorBooted and HudVisible then
+                SetOpacity("VisorDay", 1.0)
+            end
+            return
+        end
+        FadeElement("VisorDay", 1.0, 0.15, 700, function()
+            FadeElement("VisorDay", 0.15, 1.0, 700, function()
+                DoPulse()
+            end)
+        end)
+    end
+    DoPulse()
+end
+
 local function WriteHudText()
     local day = GetDayNumber()
     SetText("VisorDay", string.format("DAY %02d", day))
     SetText("VisorPhase", string.format("PHASE: %s", PhaseNames[VisorPhase] or "UNKNOWN"))
-    SetText("VisorIndex", string.format("EXTINCTION INDEX %d%%", ExtinctionPct[VisorPhase] or 0))
+    SetText("VisorIndex", string.format("COLLAPSE INDEX %d%%", ExtinctionPct[VisorPhase] or 0))
 
     local nearby = CountNearbyCreatures()
     SetText("VisorThreat", ThreatText(nearby))
@@ -304,6 +446,13 @@ local function WriteHudText()
     else
         SetText("VisorRescue", "RESCUE: IMMINENT")
     end
+
+    if LastKnownDay and day ~= LastKnownDay and HudVisible then
+        print(string.format("[EE-VISOR] Day changed: %d → %d\n", LastKnownDay, day))
+        PulseDayChange()
+        TriggerDayLore(day)
+    end
+    LastKnownDay = day
 end
 
 local function BootVisor()
@@ -338,7 +487,14 @@ local function BootVisor()
                 end)
             end
             ExecuteWithDelay(stagger * #HudNames + 400, function()
-                if VisorBooted then HudVisible = true end
+                if VisorBooted then
+                    HudVisible = true
+                    local day = GetDayNumber()
+                    if day > 1 then
+                        QueueMessages({"Field protocol designed for day 1 deployment.", "New game recommended for full experience."})
+                    end
+                    TriggerPhaseLore(VisorPhase)
+                end
             end)
         end)
     end)
@@ -354,6 +510,12 @@ local function ShutdownVisor()
     MenuHidden = false
     PhaseReceived = false
     BootedWidgetName = nil
+    LastKnownDay = nil
+    DayPulseActive = false
+    LastLorePhase = -1
+    LastLoreDay = -1
+    MessageQueue = {}
+    MessageActive = false
     for _, name in ipairs(AllNames) do
         SetOpacity(name, 0)
     end
@@ -457,7 +619,10 @@ function EE_SetVisorPhase(phase)
     PhaseReceived = true
     VisorPhase = phase
     ExecuteInGameThread(function()
-        if FindRefs() and HudVisible then WriteHudText() end
+        if FindRefs() and HudVisible then
+            WriteHudText()
+            TriggerPhaseLore(phase)
+        end
     end)
 end
 

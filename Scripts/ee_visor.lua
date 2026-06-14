@@ -9,14 +9,22 @@ local SurfaceWarnShowing = false
 local MenuHidden = false
 
 local VisorPhase = 0
-local Phase4StartDay = nil
 local PhaseReceived = false
 local BootedWidgetName = nil
+local SurfaceElapsed = 0
 
-local RESCUE_TOTAL_DAYS = 5
-local SURFACE_DAMAGE = 3.0
+local TOTAL_DAYS = 7
+local SURFACE_TICK = 1000
 local POLL_MS = 3000
 local FADE_INTERVAL = 40
+
+local SurfaceGrace = {
+    [0] = 60, [1] = 40, [2] = 25, [3] = 12, [4] = 5,
+}
+
+local SurfaceDmg = {
+    [0] = 0, [1] = 2.0, [2] = 4.0, [3] = 7.0, [4] = 12.0,
+}
 
 local PhaseNames = {
     [0] = "CALM", [1] = "TREMORS", [2] = "MIGRATION",
@@ -51,11 +59,17 @@ local function FindRefs()
     local Widgets = FindAllOf("WBP_ExtinctionEvent_C")
     if not Widgets then return false end
     for _, Widget in ipairs(Widgets) do
-        if Widget:IsValid() then
+        local wValid = false
+        pcall(function() wValid = Widget:IsValid() end)
+        if wValid then
             local allOk = true
             for _, name in ipairs(AllNames) do
-                local ok, ref = pcall(function() return Widget[name] end)
-                if ok and ref and type(ref) == "userdata" and ref:IsValid() then
+                local ok, ref = pcall(function()
+                    local r = Widget[name]
+                    if r and type(r) == "userdata" and r:IsValid() then return r end
+                    return nil
+                end)
+                if ok and ref then
                     Refs[name] = ref
                 else
                     allOk = false
@@ -74,7 +88,7 @@ end
 
 local TextIndex = {
     VisorDay = 0, VisorPhase = 1, VisorIndex = 2,
-    VisorThreat = 3, VisorRescue = 4,
+    VisorThreat = 3, VisorRescue = 4, VisorSurfaceWarn = 5,
 }
 
 local function GetWidget()
@@ -164,12 +178,10 @@ local function IsInMainLevel()
         local actors = FindAllOf("ModActor_C")
         if not actors then return end
         for i = #actors, 1, -1 do
-            if actors[i]:IsValid() then
-                local name = actors[i]:GetFullName()
-                if name and name:find("L_Main") then
-                    inMain = true
-                    return
-                end
+            local ok, name = pcall(function() return actors[i]:GetFullName() end)
+            if ok and name and name:find("L_Main") then
+                inMain = true
+                return
             end
         end
     end)
@@ -180,12 +192,13 @@ local function GetDayNumber()
     local day = 1
     pcall(function()
         local comps = FindAllOf("UWETimeOfDayComponent")
-        if comps then
-            for _, comp in ipairs(comps) do
-                if comp:IsValid() then
-                    day = comp:GetDayNumber()
-                    break
-                end
+        if not comps then return end
+        for _, comp in ipairs(comps) do
+            local isValid = false
+            pcall(function() isValid = comp:IsValid() end)
+            if isValid then
+                local ok, d = pcall(function() return comp:GetDayNumber() end)
+                if ok and d then day = d; break end
             end
         end
     end)
@@ -198,7 +211,11 @@ local function GetSeaLevel()
     if SeaLevel then return SeaLevel end
     pcall(function()
         local statics = StaticFindObject("/Script/UWEGameplay.Default__UWEGameConfigurationStatics")
-        if statics and statics:IsValid() then
+        if not statics then return end
+        
+        local isValid = false
+        pcall(function() isValid = statics:IsValid() end)
+        if isValid then
             SeaLevel = statics:GetGlobalOceanSeaLevel()
         end
     end)
@@ -256,6 +273,8 @@ local function ThreatText(count)
 end
 
 local function DealSurfaceDamage()
+    local dmg = SurfaceDmg[VisorPhase] or 0
+    if dmg <= 0 then return end
     pcall(function()
         local PC = UEHelpers.GetPlayerController()
         if not PC or not PC:IsValid() then return end
@@ -263,7 +282,10 @@ local function DealSurfaceDamage()
         if not Pawn or not Pawn:IsValid() then return end
         local hsc = Pawn.HealthSetComponent
         if not hsc or not hsc:IsValid() then return end
-        hsc:SetDamage(SURFACE_DAMAGE)
+        local hp = hsc:GetHealth()
+        if hp and hp > 0 then
+            hsc:SetHealth(math.max(0, hp - dmg))
+        end
     end)
 end
 
@@ -276,13 +298,11 @@ local function WriteHudText()
     local nearby = CountNearbyCreatures()
     SetText("VisorThreat", ThreatText(nearby))
 
-    if VisorPhase >= 4 and Phase4StartDay then
-        local eta = math.max(0, RESCUE_TOTAL_DAYS - (day - Phase4StartDay))
-        SetText("VisorRescue", string.format("RESCUE ETA: %d DAYS", eta))
-    elseif VisorPhase >= 1 then
-        SetText("VisorRescue", "RESCUE ETA: PENDING")
+    local eta = math.max(0, TOTAL_DAYS - day)
+    if eta > 0 then
+        SetText("VisorRescue", string.format("RESCUE ETA: %d DAY%s", eta, eta == 1 and "" or "S"))
     else
-        SetText("VisorRescue", "RESCUE ETA: -- DAYS")
+        SetText("VisorRescue", "RESCUE: IMMINENT")
     end
 end
 
@@ -318,7 +338,7 @@ local function BootVisor()
                 end)
             end
             ExecuteWithDelay(stagger * #HudNames + 400, function()
-                HudVisible = true
+                if VisorBooted then HudVisible = true end
             end)
         end)
     end)
@@ -329,6 +349,7 @@ local function ShutdownVisor()
     HudVisible = false
     VisorBooted = false
     SurfaceWarnShowing = false
+    SurfaceElapsed = 0
     TranceWarnActive = false
     MenuHidden = false
     PhaseReceived = false
@@ -371,31 +392,56 @@ local function UpdateHud()
     local inMenu = IsInMenu()
     if inMenu and not MenuHidden then
         MenuHidden = true
-        for _, name in ipairs(HudNames) do
+        SurfaceWarnShowing = false
+        for _, name in ipairs(AllNames) do
             FadeElement(name, GetOpacity(name), 0, 150)
         end
         return
     elseif not inMenu and MenuHidden then
         MenuHidden = false
+        if VisorBooted then HudVisible = true end
         for _, name in ipairs(HudNames) do
             FadeElement(name, 0, 1.0, 200)
         end
+        if TranceWarnActive then
+            FadeElement("VisorTranceWarn", 0, 0.9, 300)
+        end
     end
     if MenuHidden then return end
+end
 
-    local above = IsAboveWater()
-    if above and VisorPhase >= 1 then
-        if not SurfaceWarnShowing then
-            SurfaceWarnShowing = true
-            FadeElement("VisorSurfaceWarn", 0, 0.9, 300)
+local function SurfaceTick()
+    ExecuteInGameThread(function()
+        if not VisorBooted or not HudVisible or MenuHidden then
+            ExecuteWithDelay(SURFACE_TICK, SurfaceTick)
+            return
         end
-        DealSurfaceDamage()
-    else
-        if SurfaceWarnShowing then
-            SurfaceWarnShowing = false
-            FadeElement("VisorSurfaceWarn", GetOpacity("VisorSurfaceWarn"), 0, 300)
+
+        local grace = SurfaceGrace[VisorPhase] or 60
+        local above = IsAboveWater() and VisorPhase >= 1
+        if above then
+            SurfaceElapsed = SurfaceElapsed + 1
+            local remaining = grace - SurfaceElapsed
+            if remaining > 0 then
+                SetText("VisorSurfaceWarn", string.format("SURFACE EXPOSURE: %ds", remaining))
+            else
+                SetText("VisorSurfaceWarn", "TOXIC - SEEK WATER")
+                DealSurfaceDamage()
+            end
+            if not SurfaceWarnShowing then
+                SurfaceWarnShowing = true
+                FadeElement("VisorSurfaceWarn", 0, 0.9, 200)
+            end
+        else
+            if SurfaceWarnShowing or SurfaceElapsed > 0 then
+                SurfaceWarnShowing = false
+                SurfaceElapsed = 0
+                FadeElement("VisorSurfaceWarn", GetOpacity("VisorSurfaceWarn"), 0, 200)
+            end
         end
-    end
+
+        ExecuteWithDelay(SURFACE_TICK, SurfaceTick)
+    end)
 end
 
 local function StartPoll()
@@ -404,20 +450,23 @@ local function StartPoll()
         ExecuteWithDelay(POLL_MS, function() Poll() end)
     end
     ExecuteWithDelay(3000, function() Poll() end)
+    ExecuteWithDelay(5000, SurfaceTick)
 end
 
 function EE_SetVisorPhase(phase)
     PhaseReceived = true
     VisorPhase = phase
-    if phase == 4 and not Phase4StartDay then
-        Phase4StartDay = GetDayNumber()
-    end
     ExecuteInGameThread(function()
         if FindRefs() and HudVisible then WriteHudText() end
     end)
 end
 
+function EE_IsMenuActive()
+    return MenuHidden
+end
+
 function EE_VisorGlitchStart()
+    if MenuHidden then return end
     if not FindRefs() then return end
     HudVisible = false
     for _, name in ipairs(HudNames) do
@@ -427,6 +476,7 @@ function EE_VisorGlitchStart()
 end
 
 function EE_VisorReboot()
+    if MenuHidden then return end
     if not FindRefs() then return end
     FadeElement("VisorGlitchText", GetOpacity("VisorGlitchText"), 0, 120)
 
@@ -439,18 +489,19 @@ function EE_VisorReboot()
         end)
     end
     ExecuteWithDelay(stagger * #HudNames + 400, function()
-        HudVisible = true
+        if VisorBooted then HudVisible = true end
     end)
 end
 
 function EE_VisorRestore()
+    if MenuHidden then return end
     if not FindRefs() then return end
     FadeElement("VisorGlitchText", GetOpacity("VisorGlitchText"), 0, 80)
     for _, name in ipairs(HudNames) do
         FadeElement(name, 0, 1.0, 200)
     end
     ExecuteWithDelay(250, function()
-        HudVisible = true
+        if VisorBooted then HudVisible = true end
     end)
 end
 

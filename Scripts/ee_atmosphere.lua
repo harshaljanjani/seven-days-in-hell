@@ -42,23 +42,30 @@ local PausePollActive     = false
 local TranceActive        = false
 local PreTranceHealth     = nil
 local WeatherPhaseTag     = 0
+local LerpTag             = 0
 
 -- Component finders
 local function FindTintOverlay()
-    if TintImage and TintImage:IsValid() then return TintImage end
+    local valid = false
+    if TintImage then pcall(function() valid = TintImage:IsValid() end) end
+    if valid then return TintImage end
+    TintImage = nil
     local Widgets = FindAllOf("WBP_ExtinctionEvent_C")
     if not Widgets then return nil end
     for _, Widget in ipairs(Widgets) do
-        if Widget:IsValid() then
-            local ok, img = pcall(function() return Widget.TintOverlay end)
-            if ok and img and type(img) == "userdata" and img:IsValid() then
-                TintImage = img
-                if not TintFound then
-                    TintFound = true
-                    print("[EE-ATM] TintOverlay found\n")
-                end
-                return img
+        local ok, img = pcall(function()
+            if not Widget:IsValid() then return nil end
+            local ti = Widget.TintOverlay
+            if ti and type(ti) == "userdata" and ti:IsValid() then return ti end
+            return nil
+        end)
+        if ok and img then
+            TintImage = img
+            if not TintFound then
+                TintFound = true
+                print("[EE-ATM] TintOverlay found\n")
             end
+            return img
         end
     end
     return nil
@@ -149,9 +156,11 @@ local function EndTrance()
             ApplyTint(CurrentTintOpacity)
             return
         end
+        local freshImg = FindTintOverlay()
+        if not freshImg then ApplyTint(CurrentTintOpacity); return end
         local t = step / fadeSteps
         local op = currentOp + (CurrentTintOpacity - currentOp) * t
-        pcall(function() img:SetRenderOpacity(op) end)
+        pcall(function() freshImg:SetRenderOpacity(op) end)
         ExecuteWithDelay(fadeInterval, function() ExecuteInGameThread(FadeBack) end)
     end
     FadeBack()
@@ -178,6 +187,11 @@ local function StartTrance(duration)
             return
         end
 
+        if EE_IsMenuActive and EE_IsMenuActive() then
+            ExecuteWithDelay(interval, function() ExecuteInGameThread(PulseTick) end)
+            return
+        end
+
         local rampIn = math.min(tick / 15, 1.0)
         local pulse = math.sin(tick * 0.06) * 0.5 + 0.5
         local opacity = baseTint + (pulse * rampIn) * (0.65 - baseTint)
@@ -193,6 +207,10 @@ local function StartTrance(duration)
 
     local function HealthPoll()
         if not TranceActive then return end
+        if EE_IsMenuActive and EE_IsMenuActive() then
+            ExecuteWithDelay(250, function() ExecuteInGameThread(HealthPoll) end)
+            return
+        end
         local hp = GetPlayerHealth()
         if hp and PreTranceHealth and hp < PreTranceHealth then
             ExecuteInGameThread(function() EndTrance() end)
@@ -219,6 +237,12 @@ local function ScheduleTranceChecks(phaseNum)
     if not cfg then return end
     local function CheckTrance()
         if CurrentAtmoPhase ~= phaseNum then return end
+        if EE_IsMenuActive and EE_IsMenuActive() then
+            ExecuteWithDelay(math.random(cfg.checkInterval[1], cfg.checkInterval[2]) * 1000, function()
+                ExecuteInGameThread(CheckTrance)
+            end)
+            return
+        end
         if not TranceActive and math.random() < cfg.chance then
             StartTrance(math.random(cfg.duration[1], cfg.duration[2]))
         end
@@ -262,17 +286,18 @@ local function Lerp(a, b, t)
     return a + (b - a) * math.min(math.max(t, 0), 1)
 end
 
-local function AtmosphereTick()
+local function AtmosphereTick(tag)
+    if tag ~= LerpTag then return end
     if not PreviousTargets or not CurrentTargets then return end
     if TranceActive then
-        ExecuteWithDelay(500, function() ExecuteInGameThread(AtmosphereTick) end)
+        ExecuteWithDelay(500, function() ExecuteInGameThread(function() AtmosphereTick(tag) end) end)
         return
     end
     LerpProgress = LerpProgress + (0.5 / LerpDuration)
     if LerpProgress > 1.0 then LerpProgress = 1.0 end
     ApplyTint(Lerp(PreviousTargets.tintOpacity, CurrentTargets.tintOpacity, LerpProgress))
     if LerpProgress < 1.0 then
-        ExecuteWithDelay(500, function() ExecuteInGameThread(AtmosphereTick) end)
+        ExecuteWithDelay(500, function() ExecuteInGameThread(function() AtmosphereTick(tag) end) end)
     else
         print(string.format("[EE-ATM] Phase %d complete - tint:%.0f%%\n",
             CurrentAtmoPhase, CurrentTargets.tintOpacity * 100))
@@ -286,6 +311,8 @@ function EE_SetAtmospherePhase(phase)
     print(string.format("[EE-ATM] === Phase %d ===\n", phase))
     if TranceActive then EndTrance() end
 
+    if phase == 0 then TintImage = nil end
+
     PreviousTargets = { tintOpacity = CurrentTintOpacity }
     CurrentTargets  = AtmosphereTargets[phase] or AtmosphereTargets[0]
     CurrentAtmoPhase = phase
@@ -293,18 +320,20 @@ function EE_SetAtmospherePhase(phase)
 
     SetGlitchPhaseIntensity(phase)
 
-    if FirstPhaseSet then
-        FirstPhaseSet = false
+    if FirstPhaseSet or phase == 0 then
+        if FirstPhaseSet then FirstPhaseSet = false end
         LerpProgress = 1.0
         CurrentTintOpacity = CurrentTargets.tintOpacity
         ApplyTint(CurrentTintOpacity)
         StartPausePoll()
-        print(string.format("[EE-ATM] Phase %d - instant (game load)\n", phase))
+        print(string.format("[EE-ATM] Phase %d - instant\n", phase))
     else
+        LerpTag = LerpTag + 1
+        local tag = LerpTag
         ApplyStaggeredWeather(phase)
         ScheduleTranceChecks(phase)
         StartPausePoll()
-        ExecuteWithDelay(500, function() ExecuteInGameThread(AtmosphereTick) end)
+        ExecuteWithDelay(500, function() ExecuteInGameThread(function() AtmosphereTick(tag) end) end)
     end
 end
 

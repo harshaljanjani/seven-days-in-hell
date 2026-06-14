@@ -205,10 +205,12 @@ local function RandFloat(min, max)
 end
 
 local function PickRandom(tbl)
+    if #tbl == 0 then return nil end
     return tbl[math.random(#tbl)]
 end
 
 local function PickRandomN(tbl, n)
+    if #tbl == 0 then return {} end
     local result = {}
     local copy = {}
     for i, v in ipairs(tbl) do copy[i] = v end
@@ -230,19 +232,27 @@ local GlitchPhaseOpacity = 1.0
 local GlitchActive = false
 
 local function FindGlitchRefs()
-    if GlitchOverlayRef and GlitchOverlayRef:IsValid() and GlitchWidgetRef and GlitchWidgetRef:IsValid() then
-        return true
-    end
+    local valid = false
+    pcall(function()
+        valid = GlitchOverlayRef and GlitchOverlayRef:IsValid()
+                and GlitchWidgetRef and GlitchWidgetRef:IsValid()
+    end)
+    if valid then return true end
+    GlitchOverlayRef = nil
+    GlitchWidgetRef = nil
     local Widgets = FindAllOf("WBP_ExtinctionEvent_C")
     if not Widgets then return false end
     for _, Widget in ipairs(Widgets) do
-        if Widget:IsValid() then
+        local ok, img = pcall(function()
+            if not Widget:IsValid() then return nil end
+            local go = Widget.GlitchOverlay
+            if go and type(go) == "userdata" and go:IsValid() then return go end
+            return nil
+        end)
+        if ok and img then
             GlitchWidgetRef = Widget
-            local ok, img = pcall(function() return Widget.GlitchOverlay end)
-            if ok and img and type(img) == "userdata" and img:IsValid() then
-                GlitchOverlayRef = img
-                return true
-            end
+            GlitchOverlayRef = img
+            return true
         end
     end
     return false
@@ -253,13 +263,18 @@ function EE_SetGlitchOpacity(opacity)
 end
 
 local function IsInMenu()
-    local PC = UEHelpers.GetPlayerController()
-    if not PC or not PC:IsValid() then return true end
-    local ok, cursor = pcall(function() return PC.bShowMouseCursor end)
-    return ok and cursor
+    local inMenu = true
+    pcall(function()
+        local PC = UEHelpers.GetPlayerController()
+        if not PC or not PC:IsValid() then return end
+        local ok, cursor = pcall(function() return PC.bShowMouseCursor end)
+        inMenu = ok and cursor
+    end)
+    return inMenu
 end
 
 local function SetGlitchOpacity(o)
+    if not GlitchOverlayRef then return end
     pcall(function() GlitchOverlayRef:SetRenderOpacity(o) end)
 end
 

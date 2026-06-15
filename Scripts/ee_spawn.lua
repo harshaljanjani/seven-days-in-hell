@@ -41,7 +41,7 @@ local PhaseConfig = {
         initialDelay = {50, 100},
         waveInterval = {120, 180},
         waves = {
-            {pool = SmallCarnivores, count = {3, 5}, dist = {2000, 3000}, zOffset = {-300, -600}},
+            {pool = SmallCarnivores, count = {3, 5}, dist = {1500, 2500}, zOffset = {-200, -400}},
         },
         wildcardChance = 0.15,
     },
@@ -49,8 +49,8 @@ local PhaseConfig = {
         initialDelay = {35, 75},
         waveInterval = {100, 150},
         waves = {
-            {pool = BigCarnivores, count = {2, 3}, dist = {3000, 5000}, zOffset = {-500, -1000}},
-            {pool = SmallCarnivores, count = {3, 4}, dist = {2000, 3500}, zOffset = {-300, -600}, staggerDelay = {12, 25}},
+            {pool = BigCarnivores, count = {2, 3}, dist = {2000, 3500}, zOffset = {-300, -700}},
+            {pool = SmallCarnivores, count = {3, 4}, dist = {1500, 2500}, zOffset = {-200, -400}, staggerDelay = {12, 25}},
         },
         wildcardChance = 0.25,
     },
@@ -58,9 +58,9 @@ local PhaseConfig = {
         initialDelay = {25, 50},
         waveInterval = {75, 120},
         waves = {
-            {pool = GiantCarnivores, count = {1, 2}, dist = {3000, 5000}, zOffset = {-800, -1500}, highTier = true},
-            {pool = BigCarnivores, count = {2, 3}, dist = {3000, 5000}, zOffset = {-500, -1000}, staggerDelay = {8, 18}},
-            {pool = SmallCarnivores, count = {3, 5}, dist = {2000, 3000}, zOffset = {-300, -600}, staggerDelay = {15, 30}},
+            {pool = GiantCarnivores, count = {1, 2}, dist = {2500, 4000}, zOffset = {-500, -1000}, highTier = true},
+            {pool = BigCarnivores, count = {2, 3}, dist = {2000, 3500}, zOffset = {-300, -700}, staggerDelay = {8, 18}},
+            {pool = SmallCarnivores, count = {3, 5}, dist = {1500, 2500}, zOffset = {-200, -400}, staggerDelay = {15, 30}},
         },
         wildcardChance = 0.3,
     },
@@ -68,10 +68,10 @@ local PhaseConfig = {
         initialDelay = {45, 75},
         waveInterval = {150, 240},
         waves = {
-            {pool = Leviathans, count = {1, 1}, dist = {10000, 20000}, zOffset = {-1500, -3000}, highTier = true},
-            {pool = GiantCarnivores, count = {1, 1}, dist = {3000, 5000}, zOffset = {-800, -1500}, staggerDelay = {12, 25}, highTier = true},
-            {pool = BigCarnivores, count = {2, 3}, dist = {3000, 5000}, zOffset = {-500, -1000}, staggerDelay = {25, 45}},
-            {pool = SmallCarnivores, count = {3, 5}, dist = {2000, 3000}, zOffset = {-300, -600}, staggerDelay = {35, 55}},
+            {pool = Leviathans, count = {1, 1}, dist = {15000, 25000}, zOffset = {-1500, -3000}, highTier = true},
+            {pool = GiantCarnivores, count = {1, 1}, dist = {2500, 4000}, zOffset = {-500, -1000}, staggerDelay = {12, 25}, highTier = true},
+            {pool = BigCarnivores, count = {2, 3}, dist = {2000, 3500}, zOffset = {-300, -700}, staggerDelay = {25, 45}},
+            {pool = SmallCarnivores, count = {3, 5}, dist = {1500, 2500}, zOffset = {-200, -400}, staggerDelay = {35, 55}},
         },
         wildcardChance = 0.35,
     },
@@ -503,11 +503,21 @@ local function SpawnGroup(creatures, dist, zOffsetMin, zOffsetMax)
                                     RetLoc.Z = pos.saveZ
                                     RetPawn:K2_SetActorLocationAndRotation(RetLoc, pos.rot, false, {}, true)
 
-                                    ExecuteWithDelay(500, function()
-                                        ExecuteInGameThread(function()
-                                            pcall(ForceAggroAll)
+                                    -- Repeat aggro 5 times over 15s to override behavior tree
+                                    local function RepeatedAggro(remaining)
+                                        if remaining <= 0 then return end
+                                        ExecuteWithDelay(500, function()
+                                            ExecuteInGameThread(function()
+                                                pcall(ForceAggroAll)
+                                                ExecuteWithDelay(3000, function()
+                                                    ExecuteInGameThread(function()
+                                                        RepeatedAggro(remaining - 1)
+                                                    end)
+                                                end)
+                                            end)
                                         end)
-                                    end)
+                                    end
+                                    RepeatedAggro(5)
                                 end)
                             end)
                         end)

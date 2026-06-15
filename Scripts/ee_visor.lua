@@ -341,8 +341,15 @@ local function TriggerPhaseLore(phase)
     end
     local title = DatabankTitles[phase]
     if title then
-        SendDatabankNotification(title)
+        SendDatabankNotification(title .. " (F1 to view)")
     end
+    if EE_UnlockLoreEntry then EE_UnlockLoreEntry(phase) end
+    ExecuteWithDelay(3000, function()
+        ExecuteInGameThread(function()
+            QueueMessages({"PERISH-COPE: New data recovered. Press F1 to view."})
+            ProcessMessageQueue()
+        end)
+    end)
 end
 
 local function TriggerDayLore(day)
@@ -352,6 +359,16 @@ local function TriggerDayLore(day)
     if not messages then return end
     QueueMessages(messages)
     ProcessMessageQueue()
+    if day == 6 and EE_UnlockLoreEntry then
+        EE_UnlockLoreEntry(5)
+        SendDatabankNotification("Rescue Signal (F1 to view)")
+        ExecuteWithDelay(3000, function()
+            ExecuteInGameThread(function()
+                QueueMessages({"PERISH-COPE: New data recovered. Press F1 to view."})
+                ProcessMessageQueue()
+            end)
+        end)
+    end
 end
 
 local function CountNearbyCreatures()

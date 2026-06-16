@@ -380,7 +380,8 @@ local function CountNearbyCreatures()
         if not Pawn or not Pawn:IsValid() then return end
         local ploc = Pawn:K2_GetActorLocation()
 
-        for _, className in ipairs(CreatureClassNames) do
+        local classes = EE_GetPhaseCreatureClasses and EE_GetPhaseCreatureClasses() or CreatureClassNames
+        for _, className in ipairs(classes) do
             local actors = FindAllOf(className)
             if actors then
                 for _, actor in ipairs(actors) do
@@ -400,6 +401,10 @@ local function CountNearbyCreatures()
     end)
     return count
 end
+
+local ThreatPollCounter = 0
+local CachedNearbyCount = 0
+local THREAT_SCAN_INTERVAL = 3
 
 local function ThreatText(count)
     if count == 0 then return "THREAT: MINIMAL" end
@@ -454,8 +459,12 @@ local function WriteHudText()
     SetText("VisorPhase", string.format("PHASE: %s", PhaseNames[VisorPhase] or "UNKNOWN"))
     SetText("VisorIndex", string.format("COLLAPSE INDEX %d%%", ExtinctionPct[VisorPhase] or 0))
 
-    local nearby = CountNearbyCreatures()
-    SetText("VisorThreat", ThreatText(nearby))
+    ThreatPollCounter = ThreatPollCounter + 1
+    if ThreatPollCounter >= THREAT_SCAN_INTERVAL then
+        ThreatPollCounter = 0
+        CachedNearbyCount = CountNearbyCreatures()
+    end
+    SetText("VisorThreat", ThreatText(CachedNearbyCount))
 
     local eta = math.max(0, TOTAL_DAYS - day)
     if eta > 0 then

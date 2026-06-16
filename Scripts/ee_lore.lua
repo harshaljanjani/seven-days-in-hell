@@ -1,7 +1,7 @@
 local UEHelpers = require("UEHelpers")
 
 local FADE_MS = 40
-local POLL_MS = 1000
+local POLL_MS = 2000
 local CONTENT_FADE = 200
 local OPEN_STAGGER = 80
 

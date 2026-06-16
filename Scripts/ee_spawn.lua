@@ -127,6 +127,27 @@ local LowTierClasses = {
     BP_Marrowbreach_C = true, BP_TwinEel_C = true, BP_Epicurean_C = true,
 }
 
+local PhaseCreatureClasses = {
+    [0] = {},
+    [1] = {"BP_Bullethead_C", "BP_Quadrate_C", "BP_FourEye_C"},
+    [2] = {"BP_Bullethead_C", "BP_Quadrate_C", "BP_FourEye_C",
+           "BP_NibblerShark_C", "BP_NeedlerShark_C",
+           "BP_Marrowbreach_C", "BP_TwinEel_C", "BP_Epicurean_C"},
+    [3] = {"BP_Bullethead_C", "BP_Quadrate_C", "BP_FourEye_C",
+           "BP_NibblerShark_C", "BP_NeedlerShark_C", "BP_NeedlerShark_Giant_C",
+           "BP_Marrowbreach_C", "BP_Marrowbreach_Giant_C",
+           "BP_TwinEel_C", "BP_Epicurean_C"},
+    [4] = CreatureClassNames,
+}
+
+local function GetPhaseClasses()
+    return PhaseCreatureClasses[ActivePhase] or CreatureClassNames
+end
+
+function EE_GetPhaseCreatureClasses()
+    return GetPhaseClasses()
+end
+
 local function CountNearbyByTier(radius)
     local high, low = 0, 0
     pcall(function()
@@ -136,7 +157,7 @@ local function CountNearbyByTier(radius)
         if not Pawn or not Pawn:IsValid() then return end
         local ploc = Pawn:K2_GetActorLocation()
 
-        for _, className in ipairs(CreatureClassNames) do
+        for _, className in ipairs(GetPhaseClasses()) do
             local actors = FindAllOf(className)
             if actors then
                 for _, actor in ipairs(actors) do
@@ -517,7 +538,7 @@ local function SpawnGroup(creatures, dist, zOffsetMin, zOffsetMax)
                                             end)
                                         end)
                                     end
-                                    RepeatedAggro(5)
+                                    RepeatedAggro(3)
                                 end)
                             end)
                         end)
@@ -549,7 +570,7 @@ function ForceAggroAll()
         local PlayerLoc = Pawn:K2_GetActorLocation()
         local candidates = {}
 
-        for _, className in ipairs(CreatureClassNames) do
+        for _, className in ipairs(GetPhaseClasses()) do
             local actors = FindAllOf(className)
             if actors then
                 for _, actor in ipairs(actors) do
@@ -610,7 +631,7 @@ local function StartCreatureCleanup()
             local PlayerLoc = Pawn:K2_GetActorLocation()
             local destroyed = 0
 
-            for _, className in ipairs(CreatureClassNames) do
+            for _, className in ipairs(GetPhaseClasses()) do
                 local actors = FindAllOf(className)
                 if actors then
                     for _, actor in ipairs(actors) do

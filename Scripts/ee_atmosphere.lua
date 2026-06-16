@@ -276,7 +276,7 @@ local function StartPausePoll()
             end
             img:SetRenderOpacity(inMenu and menuOpacity or CurrentTintOpacity)
         end)
-        ExecuteWithDelay(500, function() ExecuteInGameThread(PollPause) end)
+        ExecuteWithDelay(1000, function() ExecuteInGameThread(PollPause) end)
     end
     ExecuteWithDelay(1000, function() ExecuteInGameThread(PollPause) end)
 end

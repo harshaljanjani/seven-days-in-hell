@@ -429,6 +429,22 @@ local function TriggerFalseAlarm()
     FlickerTick()
 end
 
+-- Sea level cache for spawn Z clamping
+local SpawnSeaLevel = nil
+local function GetSpawnSeaLevel()
+    if SpawnSeaLevel then return SpawnSeaLevel end
+    pcall(function()
+        local statics = StaticFindObject("/Script/UWEGameplay.Default__UWEGameConfigurationStatics")
+        if not statics then return end
+        local isValid = false
+        pcall(function() isValid = statics:IsValid() end)
+        if isValid then
+            SpawnSeaLevel = statics:GetGlobalOceanSeaLevel()
+        end
+    end)
+    return SpawnSeaLevel or 0
+end
+
 -- Position calculation (behind player, outside FoV)
 
 local function CalcSpawnPosition(dist, zOffsetMin, zOffsetMax)
@@ -455,6 +471,11 @@ local function CalcSpawnPosition(dist, zOffsetMin, zOffsetMax)
     local spawnX = Loc.X + dirX * dist
     local spawnY = Loc.Y + dirY * dist
     local spawnZ = Loc.Z - RandRange(math.abs(zOffsetMin), math.abs(zOffsetMax))
+
+    local seaLevel = GetSpawnSeaLevel()
+    if spawnZ > seaLevel - 500 then
+        spawnZ = seaLevel - 500
+    end
 
     return {
         x = spawnX, y = spawnY, z = spawnZ,

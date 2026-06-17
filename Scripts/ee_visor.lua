@@ -28,6 +28,14 @@ local SurfaceDmg = {
     [0] = 0, [1] = 2.0, [2] = 4.0, [3] = 7.0, [4] = 12.0,
 }
 
+local BaseGrace = {
+    [0] = 999, [1] = 999, [2] = 90, [3] = 45, [4] = 20,
+}
+
+local BaseDmg = {
+    [0] = 0, [1] = 0, [2] = 1.5, [3] = 3.0, [4] = 6.0,
+}
+
 local PhaseNames = {
     [0] = "CALM", [1] = "TREMORS", [2] = "MIGRATION",
     [3] = "COLLAPSE", [4] = "VOID BREACH",
@@ -238,6 +246,47 @@ local function IsAboveWater()
     return above
 end
 
+local BaseElapsed = 0
+local BaseWarnShowing = false
+
+local function IsInBase()
+    local inBase = false
+    pcall(function()
+        local PC = UEHelpers.GetPlayerController()
+        if not PC or not PC:IsValid() then return end
+        local Pawn = PC.Pawn
+        if not Pawn or not Pawn:IsValid() then return end
+        local loc = Pawn:K2_GetActorLocation()
+        if loc.Z >= GetSeaLevel() then return end
+        local cmc = Pawn.CharacterMovement
+        if not cmc or type(cmc) ~= "userdata" then return end
+        local valid = false
+        pcall(function() valid = cmc:IsValid() end)
+        if not valid then return end
+        local mode = 4
+        pcall(function() mode = cmc.MovementMode end)
+        inBase = (mode ~= 4)
+    end)
+    return inBase
+end
+
+local function DealBaseDamage()
+    local dmg = BaseDmg[VisorPhase] or 0
+    if dmg <= 0 then return end
+    pcall(function()
+        local PC = UEHelpers.GetPlayerController()
+        if not PC or not PC:IsValid() then return end
+        local Pawn = PC.Pawn
+        if not Pawn or not Pawn:IsValid() then return end
+        local hsc = Pawn.HealthSetComponent
+        if not hsc or not hsc:IsValid() then return end
+        local hp = hsc:GetHealth()
+        if hp and hp > 0 then
+            hsc:SetHealth(math.max(0, hp - dmg))
+        end
+    end)
+end
+
 -- Visor message queue (bottom screen text)
 local MessageQueue = {}
 local MessageActive = false
@@ -334,6 +383,11 @@ local LastLoreDay = -1
 local function TriggerPhaseLore(phase)
     if phase == LastLorePhase then return end
     LastLorePhase = phase
+    if EE_UnlockLoreEntry then
+        for i = 0, phase do EE_UnlockLoreEntry(i) end
+    end
+    local day = GetDayNumber()
+    if day >= 6 and EE_UnlockLoreEntry then EE_UnlockLoreEntry(5) end
     local messages = PhaseLore[phase]
     if messages then
         QueueMessages(messages)
@@ -343,7 +397,6 @@ local function TriggerPhaseLore(phase)
     if title then
         SendDatabankNotification(title .. " (F1 to view)")
     end
-    if EE_UnlockLoreEntry then EE_UnlockLoreEntry(phase) end
     ExecuteWithDelay(3000, function()
         ExecuteInGameThread(function()
             QueueMessages({"PERISH-COPE: New data recovered. Press F1 to view."})
@@ -532,6 +585,8 @@ local function ShutdownVisor()
     VisorBooted = false
     SurfaceWarnShowing = false
     SurfaceElapsed = 0
+    BaseWarnShowing = false
+    BaseElapsed = 0
     TranceWarnActive = false
     MenuHidden = false
     PhaseReceived = false
@@ -605,10 +660,14 @@ local function SurfaceTick()
             return
         end
 
-        local grace = SurfaceGrace[VisorPhase] or 60
         local above = IsAboveWater() and VisorPhase >= 1
+        local inBase = not above and IsInBase() and VisorPhase >= 2
+
         if above then
+            BaseElapsed = 0
+            BaseWarnShowing = false
             SurfaceElapsed = SurfaceElapsed + 1
+            local grace = SurfaceGrace[VisorPhase] or 60
             local remaining = grace - SurfaceElapsed
             if remaining > 0 then
                 SetText("VisorSurfaceWarn", string.format("SURFACE EXPOSURE: %ds", remaining))
@@ -620,10 +679,29 @@ local function SurfaceTick()
                 SurfaceWarnShowing = true
                 FadeElement("VisorSurfaceWarn", 0, 0.9, 200)
             end
+        elseif inBase then
+            SurfaceElapsed = 0
+            SurfaceWarnShowing = false
+            BaseElapsed = BaseElapsed + 1
+            local grace = BaseGrace[VisorPhase] or 999
+            local remaining = grace - BaseElapsed
+            if remaining > 0 then
+                SetText("VisorSurfaceWarn", string.format("HABITAT CONTAMINATION: %ds", remaining))
+            else
+                SetText("VisorSurfaceWarn", "HABITAT COMPROMISED - SEEK OPEN WATER")
+                DealBaseDamage()
+            end
+            if not BaseWarnShowing then
+                BaseWarnShowing = true
+                FadeElement("VisorSurfaceWarn", 0, 0.9, 200)
+            end
         else
-            if SurfaceWarnShowing or SurfaceElapsed > 0 then
-                SurfaceWarnShowing = false
-                SurfaceElapsed = 0
+            local wasWarning = SurfaceWarnShowing or SurfaceElapsed > 0 or BaseWarnShowing or BaseElapsed > 0
+            SurfaceWarnShowing = false
+            SurfaceElapsed = 0
+            BaseWarnShowing = false
+            BaseElapsed = 0
+            if wasWarning then
                 FadeElement("VisorSurfaceWarn", GetOpacity("VisorSurfaceWarn"), 0, 200)
             end
         end

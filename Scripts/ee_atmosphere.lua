@@ -43,6 +43,7 @@ local TranceActive        = false
 local PreTranceHealth     = nil
 local WeatherPhaseTag     = 0
 local LerpTag             = 0
+local MissionFadeTag      = 0
 
 -- Component finders
 local function FindTintOverlay()
@@ -169,6 +170,7 @@ end
 
 local function StartTrance(duration)
     if TranceActive then return end
+    if EE_IsMissionComplete and EE_IsMissionComplete() then return end
     TranceActive = true
     PreTranceHealth = GetPlayerHealth()
     if EE_VisorTranceStart then EE_VisorTranceStart() end
@@ -314,6 +316,7 @@ function EE_SetAtmospherePhase(phase)
     if phase == CurrentAtmoPhase and LerpProgress >= 1.0 then return end
     print(string.format("[EE-ATM] === Phase %d ===\n", phase))
     if TranceActive then EndTrance() end
+    MissionFadeTag = MissionFadeTag + 1
 
     if phase == 0 then TintImage = nil end
 
@@ -343,6 +346,32 @@ end
 
 function EE_TestTrance(duration)
     StartTrance(duration or 10)
+end
+
+function EE_Slomo(speed)
+    CheatCommand(function(CM) CM:Slomo(speed) end)
+end
+
+function EE_StartMissionFade(durationSec)
+    if TranceActive then EndTrance() end
+    MissionFadeTag = MissionFadeTag + 1
+    local tag = MissionFadeTag
+    local targetOpacity = 0.92
+    local steps = math.max(1, math.floor(durationSec * 5))
+    local step = 0
+    local startOp = CurrentTintOpacity
+    local function FadeTick()
+        if MissionFadeTag ~= tag then return end
+        step = step + 1
+        if step > steps then
+            ApplyTint(targetOpacity)
+            return
+        end
+        local t = step / steps
+        ApplyTint(startOp + (targetOpacity - startOp) * t)
+        ExecuteWithDelay(200, function() ExecuteInGameThread(FadeTick) end)
+    end
+    FadeTick()
 end
 
 RegisterConsoleCommandHandler("ee_atmo", function(FullCommand, Parameters)

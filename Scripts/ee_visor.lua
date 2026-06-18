@@ -14,6 +14,8 @@ local BootedWidgetName = nil
 local SurfaceElapsed = 0
 local LastKnownDay = nil
 local DayPulseActive = false
+local MissionComplete = false
+local MissionCompleteTag = 0
 
 local TOTAL_DAYS = 7
 local SURFACE_TICK = 1000
@@ -99,7 +101,7 @@ end
 local TextIndex = {
     VisorDay = 0, VisorPhase = 1, VisorIndex = 2,
     VisorThreat = 3, VisorRescue = 4, VisorSurfaceWarn = 5,
-    VisorMessage = 6,
+    VisorMessage = 6, VisorGlitchText = 7,
 }
 
 local function GetWidget()
@@ -124,15 +126,17 @@ local function SetText(name, text)
 end
 
 local function SetOpacity(name, op)
+    if not RefsFound then return end
     local ref = Refs[name]
     if not ref then return end
     pcall(function() ref:SetRenderOpacity(op) end)
 end
 
 local function GetOpacity(name)
-    local op = 1.0
+    if not RefsFound then return 1.0 end
     local ref = Refs[name]
-    if not ref then return op end
+    if not ref then return 1.0 end
+    local op = 1.0
     pcall(function() op = ref:GetRenderOpacity() end)
     return op
 end
@@ -506,8 +510,99 @@ local function PulseDayChange()
     DoPulse()
 end
 
+local function TriggerMissionComplete()
+    if MissionComplete then return end
+    MissionComplete = true
+    MissionCompleteTag = MissionCompleteTag + 1
+    local tag = MissionCompleteTag
+    print("[EE-VISOR] MISSION COMPLETE triggered\n")
+
+    HudVisible = true
+    TranceWarnActive = false
+    SurfaceWarnShowing = false
+    BaseWarnShowing = false
+    SurfaceElapsed = 0
+    BaseElapsed = 0
+    FadeElement("VisorTranceWarn", GetOpacity("VisorTranceWarn"), 0, 200)
+    FadeElement("VisorSurfaceWarn", GetOpacity("VisorSurfaceWarn"), 0, 200)
+    FadeElement("VisorGlitchText", GetOpacity("VisorGlitchText"), 0, 200)
+
+    QueueMessages({
+        "ALTERRA RESCUE VESSEL ARC-7 HAS ARRIVED.",
+        "YOU SURVIVED.",
+    })
+    ProcessMessageQueue()
+
+    ExecuteWithDelay(3000, function()
+        ExecuteInGameThread(function()
+            if MissionCompleteTag ~= tag or not MissionComplete then return end
+
+            for _, name in ipairs(HudNames) do
+                FadeElement(name, GetOpacity(name), 0, 1500)
+            end
+
+            if EE_Slomo then EE_Slomo(0.4) end
+            if EE_StartMissionFade then EE_StartMissionFade(10) end
+
+            local flickerTick = 0
+            local flickerTotal = 40
+            local function Flicker()
+                if MissionCompleteTag ~= tag or not MissionComplete then return end
+                if MenuHidden then
+                    ExecuteWithDelay(200, function() ExecuteInGameThread(Flicker) end)
+                    return
+                end
+                flickerTick = flickerTick + 1
+                if flickerTick > flickerTotal then
+                    FadeElement("VisorGlitchText", GetOpacity("VisorGlitchText"), 0, 400)
+                    return
+                end
+                local flicker = (math.random() < 0.5) and (math.random() * 0.7 + 0.1) or 0
+                SetOpacity("VisorGlitchText", flicker)
+                ExecuteWithDelay(200, function() ExecuteInGameThread(Flicker) end)
+            end
+            Flicker()
+
+            ExecuteWithDelay(12000, function()
+                ExecuteInGameThread(function()
+                    if MissionCompleteTag ~= tag or not MissionComplete then return end
+                    if EE_Slomo then EE_Slomo(0.15) end
+
+                    SetText("VisorGlitchText", "MISSION COMPLETE")
+                    FadeElement("VisorGlitchText", 0, 1.0, 1500, function()
+                        local function Pulse()
+                            if MissionCompleteTag ~= tag or not MissionComplete then return end
+                            if MenuHidden then
+                                ExecuteWithDelay(300, function() ExecuteInGameThread(Pulse) end)
+                                return
+                            end
+                            FadeElement("VisorGlitchText", 1.0, 0.3, 600, function()
+                                if MissionCompleteTag ~= tag or not MissionComplete then return end
+                                FadeElement("VisorGlitchText", 0.3, 1.0, 600, function()
+                                    Pulse()
+                                end)
+                            end)
+                        end
+                        ExecuteWithDelay(300, function() ExecuteInGameThread(Pulse) end)
+                    end)
+                end)
+            end)
+        end)
+    end)
+end
+
 local function WriteHudText()
     local day = GetDayNumber()
+
+    if day > TOTAL_DAYS and not MissionComplete then
+        TriggerMissionComplete()
+    end
+
+    if MissionComplete then
+        LastKnownDay = day
+        return
+    end
+
     SetText("VisorDay", string.format("DAY %02d", day))
     SetText("VisorPhase", string.format("PHASE: %s", PhaseNames[VisorPhase] or "UNKNOWN"))
     SetText("VisorIndex", string.format("COLLAPSE INDEX %d%%", ExtinctionPct[VisorPhase] or 0))
@@ -581,6 +676,11 @@ end
 
 local function ShutdownVisor()
     if not VisorBooted then return end
+    if MissionComplete then
+        if EE_Slomo then EE_Slomo(1.0) end
+    end
+    MissionComplete = false
+    MissionCompleteTag = MissionCompleteTag + 1
     HudVisible = false
     VisorBooted = false
     SurfaceWarnShowing = false
@@ -597,9 +697,8 @@ local function ShutdownVisor()
     LastLoreDay = -1
     MessageQueue = {}
     MessageActive = false
-    for _, name in ipairs(AllNames) do
-        SetOpacity(name, 0)
-    end
+    RefsFound = false
+    Refs = {}
 end
 
 local function UpdateHud()
@@ -644,11 +743,15 @@ local function UpdateHud()
     elseif not inMenu and MenuHidden then
         MenuHidden = false
         if VisorBooted then HudVisible = true end
-        for _, name in ipairs(HudNames) do
-            FadeElement(name, 0, 1.0, 200)
-        end
-        if TranceWarnActive then
-            FadeElement("VisorTranceWarn", 0, 0.9, 300)
+        if MissionComplete then
+            FadeElement("VisorGlitchText", 0, 1.0, 200)
+        else
+            for _, name in ipairs(HudNames) do
+                FadeElement(name, 0, 1.0, 200)
+            end
+            if TranceWarnActive then
+                FadeElement("VisorTranceWarn", 0, 0.9, 300)
+            end
         end
     end
     if MenuHidden then return end
@@ -656,7 +759,7 @@ end
 
 local function SurfaceTick()
     ExecuteInGameThread(function()
-        if not VisorBooted or not HudVisible or MenuHidden then
+        if MissionComplete or not VisorBooted or not HudVisible or MenuHidden then
             ExecuteWithDelay(SURFACE_TICK, SurfaceTick)
             return
         end
@@ -721,6 +824,22 @@ local function StartPoll()
 end
 
 function EE_SetVisorPhase(phase)
+    if phase == 0 and MissionComplete then
+        MissionComplete = false
+        MissionCompleteTag = MissionCompleteTag + 1
+        if EE_Slomo then EE_Slomo(1.0) end
+        FadeElement("VisorGlitchText", GetOpacity("VisorGlitchText"), 0, 300)
+        ExecuteWithDelay(400, function()
+            ExecuteInGameThread(function()
+                if MissionComplete then return end
+                for _, name in ipairs(HudNames) do
+                    FadeElement(name, 0, 1.0, 300)
+                end
+            end)
+        end)
+        print("[EE-VISOR] Mission complete cleared by phase 0 reset\n")
+    end
+    if MissionComplete then return end
     PhaseReceived = true
     VisorPhase = phase
     ExecuteInGameThread(function()
@@ -735,7 +854,12 @@ function EE_IsMenuActive()
     return MenuHidden
 end
 
+function EE_IsMissionComplete()
+    return MissionComplete
+end
+
 function EE_VisorGlitchStart()
+    if MissionComplete then return end
     if MenuHidden then return end
     if not FindRefs() then return end
     HudVisible = false
@@ -746,6 +870,7 @@ function EE_VisorGlitchStart()
 end
 
 function EE_VisorReboot()
+    if MissionComplete then return end
     if MenuHidden then return end
     if not FindRefs() then return end
     FadeElement("VisorGlitchText", GetOpacity("VisorGlitchText"), 0, 120)
@@ -764,6 +889,7 @@ function EE_VisorReboot()
 end
 
 function EE_VisorRestore()
+    if MissionComplete then return end
     if MenuHidden then return end
     if not FindRefs() then return end
     FadeElement("VisorGlitchText", GetOpacity("VisorGlitchText"), 0, 80)

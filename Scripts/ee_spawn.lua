@@ -545,7 +545,6 @@ local function SpawnGroup(creatures, dist, zOffsetMin, zOffsetMax)
                                     RetLoc.Z = pos.saveZ
                                     RetPawn:K2_SetActorLocationAndRotation(RetLoc, pos.rot, false, {}, true)
 
-                                    -- Repeat aggro 5 times over 15s to override behavior tree
                                     local function RepeatedAggro(remaining)
                                         if remaining <= 0 then return end
                                         ExecuteWithDelay(500, function()

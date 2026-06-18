@@ -636,6 +636,7 @@ local function UpdateHud()
     if inMenu and not MenuHidden then
         MenuHidden = true
         SurfaceWarnShowing = false
+        BaseWarnShowing = false
         for _, name in ipairs(AllNames) do
             FadeElement(name, GetOpacity(name), 0, 150)
         end

@@ -261,6 +261,10 @@ local function StartPausePoll()
     PausePollActive = true
     local function PollPause()
         if CurrentAtmoPhase == 0 then PausePollActive = false; return end
+        if TranceActive then
+            ExecuteWithDelay(1000, function() ExecuteInGameThread(PollPause) end)
+            return
+        end
         pcall(function()
             local img = FindTintOverlay()
             if not img then return end

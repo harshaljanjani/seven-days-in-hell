@@ -443,6 +443,7 @@ local function ShutdownLore()
     LoreMenuHidden = false
     Transitioning = false
     CurrentPage = 0
+    UnlockedEntries = {}
     LoreFadeGen = {}
     for _, name in ipairs(AllLoreNames) do
         SetLoreOpacity(name, 0)

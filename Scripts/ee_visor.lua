@@ -399,11 +399,11 @@ local function TriggerPhaseLore(phase)
     end
     local title = DatabankTitles[phase]
     if title then
-        SendDatabankNotification(title .. " (F1 to view)")
+        SendDatabankNotification(title .. " (P to view)")
     end
     ExecuteWithDelay(3000, function()
         ExecuteInGameThread(function()
-            QueueMessages({"PERISH-COPE: New data recovered. Press F1 to view."})
+            QueueMessages({"PERISH-COPE: New data recovered. Press P to view."})
             ProcessMessageQueue()
         end)
     end)
@@ -418,10 +418,10 @@ local function TriggerDayLore(day)
     ProcessMessageQueue()
     if day == 6 and EE_UnlockLoreEntry then
         EE_UnlockLoreEntry(5)
-        SendDatabankNotification("Rescue Signal (F1 to view)")
+        SendDatabankNotification("Rescue Signal (P to view)")
         ExecuteWithDelay(3000, function()
             ExecuteInGameThread(function()
-                QueueMessages({"PERISH-COPE: New data recovered. Press F1 to view."})
+                QueueMessages({"PERISH-COPE: New data recovered. Press P to view."})
                 ProcessMessageQueue()
             end)
         end)
@@ -526,6 +526,8 @@ local function TriggerMissionComplete()
     FadeElement("VisorTranceWarn", GetOpacity("VisorTranceWarn"), 0, 200)
     FadeElement("VisorSurfaceWarn", GetOpacity("VisorSurfaceWarn"), 0, 200)
     FadeElement("VisorGlitchText", GetOpacity("VisorGlitchText"), 0, 200)
+
+    if EE_StopAllSpawns then EE_StopAllSpawns() end
 
     QueueMessages({
         "ALTERRA RESCUE VESSEL ARC-7 HAS ARRIVED.",
@@ -699,6 +701,7 @@ local function ShutdownVisor()
     MessageActive = false
     RefsFound = false
     Refs = {}
+    if EE_ShutdownAtmosphere then EE_ShutdownAtmosphere() end
 end
 
 local function UpdateHud()
@@ -842,6 +845,10 @@ function EE_SetVisorPhase(phase)
     if MissionComplete then return end
     PhaseReceived = true
     VisorPhase = phase
+    if phase == 0 then
+        LastLorePhase = -1
+        LastLoreDay = -1
+    end
     ExecuteInGameThread(function()
         if FindRefs() and HudVisible then
             WriteHudText()

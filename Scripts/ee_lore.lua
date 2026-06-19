@@ -165,7 +165,7 @@ local LoreRefsFound = false
 local LoreOpen = false
 local LoreBooted = false
 local CurrentPage = 0
-local LoreMenuHidden = false
+local LoreMenuWatchActive = false
 local Transitioning = false
 local UnlockedEntries = {}
 local LoreFadeGen = {}
@@ -355,6 +355,40 @@ local function TransitionToPage(newIndex)
 end
 
 -- Open / close
+local function CloseLore(instant)
+    if not LoreOpen then return end
+    LoreOpen = false
+    Transitioning = false
+    if instant then
+        for _, name in ipairs(AllLoreNames) do
+            LoreFadeGen[name] = (LoreFadeGen[name] or 0) + 1
+            SetLoreOpacity(name, 0)
+        end
+    else
+        for _, name in ipairs(AllLoreNames) do
+            FadeLoreElement(name, GetLoreOpacity(name), 0, 200)
+        end
+    end
+end
+
+local function StartLoreMenuWatch()
+    if LoreMenuWatchActive then return end
+    LoreMenuWatchActive = true
+    local function WatchTick()
+        if not LoreOpen then
+            LoreMenuWatchActive = false
+            return
+        end
+        if IsInMenu() then
+            CloseLore(true)
+            LoreMenuWatchActive = false
+            return
+        end
+        ExecuteWithDelay(200, function() ExecuteInGameThread(WatchTick) end)
+    end
+    ExecuteWithDelay(200, function() ExecuteInGameThread(WatchTick) end)
+end
+
 local function OpenLore()
     if LoreOpen or Transitioning then return end
     if not FindLoreRefs() then return end
@@ -390,17 +424,8 @@ local function OpenLore()
             FadeLoreElement("LoreImage0", 0, 1.0, 300)
         end)
     end)
-end
 
-local function CloseLore()
-    if not LoreOpen then return end
-    LoreOpen = false
-    Transitioning = false
-
-    for _, name in ipairs(AllLoreNames) do
-        FadeLoreElement(name, GetLoreOpacity(name), 0, 200)
-    end
-
+    StartLoreMenuWatch()
 end
 
 local function ToggleLore()
@@ -440,7 +465,7 @@ end
 local function ShutdownLore()
     LoreOpen = false
     LoreBooted = false
-    LoreMenuHidden = false
+    LoreMenuWatchActive = false
     Transitioning = false
     CurrentPage = 0
     UnlockedEntries = {}
@@ -468,29 +493,9 @@ local function UpdateLore()
         end
     end
 
-    local inMenu = IsInMenu()
-
-    if inMenu and LoreOpen and not LoreMenuHidden then
-        LoreMenuHidden = true
-        for _, name in ipairs(AllLoreNames) do
-            FadeLoreElement(name, GetLoreOpacity(name), 0, 150)
-        end
+    if IsInMenu() and LoreOpen then
+        CloseLore(true)
         return
-    end
-
-    if not inMenu and LoreMenuHidden then
-        LoreMenuHidden = false
-        if LoreOpen then
-            FadeLoreElement("LoreBG", 0, 0.93, 200)
-            local restoreNames = {
-                "LoreHeader", "LoreSubHeader",
-                "LoreCounter", "LoreTitle", "LoreBody", "LoreNav",
-            }
-            for _, name in ipairs(restoreNames) do
-                FadeLoreElement(name, 0, 1.0, 200)
-            end
-            FadeLoreElement("LoreImage0", 0, 1.0, 200)
-        end
     end
 end
 
@@ -510,6 +515,19 @@ function EE_UnlockLoreEntry(index)
         index, LoreEntries[index] and LoreEntries[index].title or "???"))
 end
 
+function EE_ResetLore()
+    UnlockedEntries = {}
+    UnlockedEntries[0] = true
+    CurrentPage = 0
+    if LoreOpen then
+        LoreOpen = false
+        for _, name in ipairs(AllLoreNames) do
+            SetLoreOpacity(name, 0)
+        end
+    end
+    print("[EE-LORE] Lore reset to entry 0 only\n")
+end
+
 -- Key bindings with debounce
 local KeyCooldown = false
 local function Debounce(fn)
@@ -523,18 +541,18 @@ local function Debounce(fn)
     end
 end
 
-RegisterKeyBind(Key.F1, Debounce(function()
+RegisterKeyBind(Key.P, Debounce(function()
     if IsInMenu() then return end
     if not GetLoreWidget() then return end
     ToggleLore()
 end))
 
-RegisterKeyBind(Key.F2, Debounce(function()
+RegisterKeyBind(Key.LEFT_ARROW, Debounce(function()
     if not LoreOpen then return end
     PrevPage()
 end))
 
-RegisterKeyBind(Key.F3, Debounce(function()
+RegisterKeyBind(Key.RIGHT_ARROW, Debounce(function()
     if not LoreOpen then return end
     NextPage()
 end))
@@ -569,4 +587,4 @@ end)
 
 StartLorePoll()
 print("[EE-LORE] PERISH-COPE Data Recovery Terminal loaded\n")
-print("[EE-LORE] F1: Open/Close | F2: Prev | F3: Next\n")
+print("[EE-LORE] P: Open/Close | LEFT: Prev | RIGHT: Next\n")

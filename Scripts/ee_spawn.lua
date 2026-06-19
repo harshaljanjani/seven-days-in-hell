@@ -148,6 +148,11 @@ function EE_GetPhaseCreatureClasses()
     return GetPhaseClasses()
 end
 
+function EE_StopAllSpawns()
+    ActivePhase = -1
+    print("[EE] All spawns stopped\n")
+end
+
 local function CountNearbyByTier(radius)
     local high, low = 0, 0
     pcall(function()
@@ -303,6 +308,7 @@ end
 local SpawnGlitchReady = false
 
 local function TriggerSpawnGlitch()
+    if EE_IsMissionComplete and EE_IsMissionComplete() then return end
     if IsInMenu() then return end
     if not FindGlitchRefs() then return end
     GlitchActive = true
@@ -324,6 +330,10 @@ local function TriggerSpawnGlitch()
     local preTick = 0
     local prePrevOpacity = 0
     local function PreFlickerTick()
+        if EE_IsMissionComplete and EE_IsMissionComplete() then
+            if FindGlitchRefs() then SetGlitchOpacity(0); pcall(function() GlitchOverlayRef:SetVisibility(1) end) end
+            GlitchActive = false; return
+        end
         preTick = preTick + 1
         if preTick > preFlickers or not FindGlitchRefs() then
             -- phase 2: solid blotch (teleport happens during this)
@@ -335,6 +345,10 @@ local function TriggerSpawnGlitch()
             local postTick = 0
             local prevOpacity = 1.0
             local function PostFlickerTick()
+                if EE_IsMissionComplete and EE_IsMissionComplete() then
+                    if FindGlitchRefs() then SetGlitchOpacity(0); pcall(function() GlitchOverlayRef:SetVisibility(1) end) end
+                    GlitchActive = false; return
+                end
                 postTick = postTick + 1
                 if postTick > totalTicks or not FindGlitchRefs() then
                     if FindGlitchRefs() then
@@ -388,6 +402,7 @@ end
 
 -- false alarm: randomized flicker burst, more intense at higher phases
 local function TriggerFalseAlarm()
+    if EE_IsMissionComplete and EE_IsMissionComplete() then return end
     if IsInMenu() then return end
     if not FindGlitchRefs() then return end
     if GlitchActive then return end
@@ -403,6 +418,10 @@ local function TriggerFalseAlarm()
     pcall(function() GlitchOverlayRef:SetVisibility(3) end)
 
     local function FlickerTick()
+        if EE_IsMissionComplete and EE_IsMissionComplete() then
+            if FindGlitchRefs() then SetGlitchOpacity(0); pcall(function() GlitchOverlayRef:SetVisibility(1) end) end
+            GlitchActive = false; return
+        end
         tick = tick + 1
         if not GlitchActive or tick > totalTicks or not FindGlitchRefs() then
             if FindGlitchRefs() then
@@ -837,6 +856,7 @@ RegisterConsoleCommandHandler("ee_phase", function(FullCommand, Parameters)
 
     if not IsInMainLevel() then
         print(string.format("[EE] Phase %d ignored - not in game level\n", phaseNum))
+        if EE_ShutdownAtmosphere then EE_ShutdownAtmosphere() end
         return true
     end
 
@@ -844,6 +864,7 @@ RegisterConsoleCommandHandler("ee_phase", function(FullCommand, Parameters)
         ActivePhase = 0
         if EE_SetAtmospherePhase then EE_SetAtmospherePhase(0) end
         if EE_SetVisorPhase then EE_SetVisorPhase(0) end
+        if EE_ResetLore then EE_ResetLore() end
         print("[EE] === PHASE 0 - ALL SYSTEMS RESET ===\n")
         return true
     end

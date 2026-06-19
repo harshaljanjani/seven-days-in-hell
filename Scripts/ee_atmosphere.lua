@@ -267,21 +267,30 @@ local function StartPausePoll()
             ExecuteWithDelay(1000, function() ExecuteInGameThread(PollPause) end)
             return
         end
+        local shouldShutdown = false
         pcall(function()
+            local PC = UEHelpers.GetPlayerController()
+            if not PC or not PC:IsValid() then shouldShutdown = true; return end
+            local Pawn = PC.Pawn
+            if not Pawn or not Pawn:IsValid() then shouldShutdown = true; return end
             local img = FindTintOverlay()
             if not img then return end
             local inMenu = false
-            local PC = UEHelpers.GetPlayerController()
-            if PC and PC:IsValid() then
-                local ok, cursor = pcall(function() return PC.bShowMouseCursor end)
-                if ok and cursor then inMenu = true end
-            end
+            local ok, cursor = pcall(function() return PC.bShowMouseCursor end)
+            if ok and cursor then inMenu = true end
             local menuOpacity = CurrentTintOpacity
-            if CurrentAtmoPhase >= 3 then
+            local isMC = EE_IsMissionComplete and EE_IsMissionComplete()
+            if isMC then
+                menuOpacity = math.min(CurrentTintOpacity, 0.3)
+            elseif CurrentAtmoPhase >= 3 then
                 menuOpacity = math.max(CurrentTintOpacity - MENU_TINT_REDUCTION, 0.0)
             end
             img:SetRenderOpacity(inMenu and menuOpacity or CurrentTintOpacity)
         end)
+        if shouldShutdown then
+            EE_ShutdownAtmosphere()
+            return
+        end
         ExecuteWithDelay(1000, function() ExecuteInGameThread(PollPause) end)
     end
     ExecuteWithDelay(1000, function() ExecuteInGameThread(PollPause) end)
@@ -319,6 +328,7 @@ function EE_SetAtmospherePhase(phase)
     MissionFadeTag = MissionFadeTag + 1
 
     if phase == 0 then TintImage = nil end
+    WeatherPhaseTag = -1
 
     PreviousTargets = { tintOpacity = CurrentTintOpacity }
     CurrentTargets  = AtmosphereTargets[phase] or AtmosphereTargets[0]
@@ -372,6 +382,25 @@ function EE_StartMissionFade(durationSec)
         ExecuteWithDelay(200, function() ExecuteInGameThread(FadeTick) end)
     end
     FadeTick()
+end
+
+function EE_ForceAtmosphereInstant()
+    FirstPhaseSet = true
+end
+
+function EE_ShutdownAtmosphere()
+    if TranceActive then EndTrance() end
+    MissionFadeTag = MissionFadeTag + 1
+    LerpTag = LerpTag + 1
+    WeatherPhaseTag = -1
+    CurrentAtmoPhase = 0
+    CurrentTintOpacity = 0
+    PausePollActive = false
+    FirstPhaseSet = true
+    local img = FindTintOverlay()
+    if img then pcall(function() img:SetRenderOpacity(0) end) end
+    TintImage = nil
+    TintFound = nil
 end
 
 RegisterConsoleCommandHandler("ee_atmo", function(FullCommand, Parameters)

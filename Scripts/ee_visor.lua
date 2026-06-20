@@ -129,7 +129,9 @@ local function SetOpacity(name, op)
     if not RefsFound then return end
     local ref = Refs[name]
     if not ref then return end
-    pcall(function() ref:SetRenderOpacity(op) end)
+    pcall(function()
+        if ref:IsValid() then ref:SetRenderOpacity(op) end
+    end)
 end
 
 local function GetOpacity(name)
@@ -137,7 +139,9 @@ local function GetOpacity(name)
     local ref = Refs[name]
     if not ref then return 1.0 end
     local op = 1.0
-    pcall(function() op = ref:GetRenderOpacity() end)
+    pcall(function()
+        if ref:IsValid() then op = ref:GetRenderOpacity() end
+    end)
     return op
 end
 
@@ -631,6 +635,24 @@ local function WriteHudText()
     LastKnownDay = day
 end
 
+local function ZeroAllWidgets()
+    pcall(function()
+        local widgets = FindAllOf("WBP_ExtinctionEvent_C")
+        if not widgets then return end
+        for _, w in ipairs(widgets) do
+            pcall(function()
+                if not w:IsValid() then return end
+                for _, name in ipairs(AllNames) do
+                    local r = w[name]
+                    if r and type(r) == "userdata" and r:IsValid() then
+                        r:SetRenderOpacity(0)
+                    end
+                end
+            end)
+        end
+    end)
+end
+
 local function BootVisor()
     if VisorBooted then return end
     VisorBooted = true
@@ -638,6 +660,8 @@ local function BootVisor()
 
     ExecuteWithDelay(3000, function()
         ExecuteInGameThread(function()
+            ZeroAllWidgets()
+
             RefsFound = false
             Refs = {}
             if not FindRefs() then
@@ -650,6 +674,35 @@ local function BootVisor()
 
             for _, name in ipairs(AllNames) do
                 SetOpacity(name, 0)
+            end
+
+            local day = GetDayNumber()
+            if day > TOTAL_DAYS then
+                MissionComplete = true
+                MissionCompleteTag = MissionCompleteTag + 1
+                local tag = MissionCompleteTag
+                HudVisible = true
+                if EE_StopAllSpawns then EE_StopAllSpawns() end
+                if EE_Slomo then EE_Slomo(0.15) end
+                if EE_StartMissionFade then EE_StartMissionFade(3) end
+                SetText("VisorGlitchText", "MISSION COMPLETE")
+                SetOpacity("VisorGlitchText", 1.0)
+                local function Pulse()
+                    if MissionCompleteTag ~= tag or not MissionComplete then return end
+                    if MenuHidden then
+                        ExecuteWithDelay(300, function() ExecuteInGameThread(Pulse) end)
+                        return
+                    end
+                    FadeElement("VisorGlitchText", 1.0, 0.3, 600, function()
+                        if MissionCompleteTag ~= tag or not MissionComplete then return end
+                        FadeElement("VisorGlitchText", 0.3, 1.0, 600, function()
+                            Pulse()
+                        end)
+                    end)
+                end
+                ExecuteWithDelay(300, function() ExecuteInGameThread(Pulse) end)
+                print("[EE-VISOR] MISSION COMPLETE resumed\n")
+                return
             end
 
             WriteHudText()
@@ -665,7 +718,6 @@ local function BootVisor()
             ExecuteWithDelay(stagger * #HudNames + 400, function()
                 if VisorBooted then
                     HudVisible = true
-                    local day = GetDayNumber()
                     if day > 1 then
                         QueueMessages({"Field protocol designed for day 1 deployment.", "New game recommended for full experience."})
                     end
@@ -683,6 +735,7 @@ local function ShutdownVisor()
     end
     MissionComplete = false
     MissionCompleteTag = MissionCompleteTag + 1
+    ZeroAllWidgets()
     HudVisible = false
     VisorBooted = false
     SurfaceWarnShowing = false
@@ -740,7 +793,8 @@ local function UpdateHud()
         SurfaceWarnShowing = false
         BaseWarnShowing = false
         for _, name in ipairs(AllNames) do
-            FadeElement(name, GetOpacity(name), 0, 150)
+            FadeGen[name] = (FadeGen[name] or 0) + 1
+            SetOpacity(name, 0)
         end
         return
     elseif not inMenu and MenuHidden then
@@ -865,11 +919,22 @@ function EE_IsMissionComplete()
     return MissionComplete
 end
 
+function EE_OnLoreToggle(isOpen)
+    if not MissionComplete then return end
+    if isOpen then
+        FadeElement("VisorGlitchText", GetOpacity("VisorGlitchText"), 0, 200)
+    else
+        FadeElement("VisorGlitchText", 0, 1.0, 200)
+    end
+end
+
 function EE_VisorGlitchStart()
     if MissionComplete then return end
+    if not HudVisible then return end
     if MenuHidden then return end
     if not FindRefs() then return end
     HudVisible = false
+    SetText("VisorGlitchText", "VISOR RECALIBRATING")
     for _, name in ipairs(HudNames) do
         FadeElement(name, GetOpacity(name), 0, 100)
     end

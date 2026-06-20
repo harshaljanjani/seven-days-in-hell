@@ -359,6 +359,7 @@ local function CloseLore(instant)
     if not LoreOpen then return end
     LoreOpen = false
     Transitioning = false
+    if EE_OnLoreToggle then EE_OnLoreToggle(false) end
     if instant then
         for _, name in ipairs(AllLoreNames) do
             LoreFadeGen[name] = (LoreFadeGen[name] or 0) + 1
@@ -397,6 +398,7 @@ local function OpenLore()
     if #list == 0 then return end
 
     LoreOpen = true
+    if EE_OnLoreToggle then EE_OnLoreToggle(true) end
 
     for _, name in ipairs(AllLoreNames) do
         SetLoreOpacity(name, 0)

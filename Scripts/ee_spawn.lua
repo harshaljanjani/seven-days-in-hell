@@ -106,6 +106,7 @@ end
 -- Active phase tracking
 
 local ActivePhase = 0
+local SpawnTag = 0
 local MAX_HIGH_TIER = 2
 
 local CreatureClassNames = {
@@ -144,12 +145,29 @@ local function GetPhaseClasses()
     return PhaseCreatureClasses[ActivePhase] or CreatureClassNames
 end
 
+local function SafeActorLocation(actor)
+    local loc = nil
+    pcall(function()
+        if not actor:IsValid() then return end
+        loc = actor:K2_GetActorLocation()
+    end)
+    if loc and loc.X then return loc end
+    return nil
+end
+
+local function SafeDestroyActor(actor)
+    pcall(function()
+        if actor:IsValid() then actor:K2_DestroyActor() end
+    end)
+end
+
 function EE_GetPhaseCreatureClasses()
     return GetPhaseClasses()
 end
 
 function EE_StopAllSpawns()
     ActivePhase = -1
+    SpawnTag = SpawnTag + 1
     print("[EE] All spawns stopped\n")
 end
 
@@ -160,15 +178,15 @@ local function CountNearbyByTier(radius)
         if not PC or not PC:IsValid() then return end
         local Pawn = PC.Pawn
         if not Pawn or not Pawn:IsValid() then return end
-        local ploc = Pawn:K2_GetActorLocation()
+        local ploc = SafeActorLocation(Pawn)
+        if not ploc then return end
 
         for _, className in ipairs(GetPhaseClasses()) do
             local actors = FindAllOf(className)
             if actors then
                 for _, actor in ipairs(actors) do
-                    pcall(function()
-                        if not actor:IsValid() then return end
-                        local loc = actor:K2_GetActorLocation()
+                    local loc = SafeActorLocation(actor)
+                    if loc then
                         local dx = loc.X - ploc.X
                         local dy = loc.Y - ploc.Y
                         local dz = loc.Z - ploc.Z
@@ -179,7 +197,7 @@ local function CountNearbyByTier(radius)
                                 low = low + 1
                             end
                         end
-                    end)
+                    end
                 end
             end
         end
@@ -193,24 +211,24 @@ local function CleanupNearbyLowTier(radius)
         if not PC or not PC:IsValid() then return end
         local Pawn = PC.Pawn
         if not Pawn or not Pawn:IsValid() then return end
-        local ploc = Pawn:K2_GetActorLocation()
+        local ploc = SafeActorLocation(Pawn)
+        if not ploc then return end
         local cleaned = 0
 
         for className, _ in pairs(LowTierClasses) do
             local actors = FindAllOf(className)
             if actors then
                 for _, actor in ipairs(actors) do
-                    pcall(function()
-                        if not actor:IsValid() then return end
-                        local loc = actor:K2_GetActorLocation()
+                    local loc = SafeActorLocation(actor)
+                    if loc then
                         local dx = loc.X - ploc.X
                         local dy = loc.Y - ploc.Y
                         local dz = loc.Z - ploc.Z
                         if math.sqrt(dx*dx + dy*dy + dz*dz) < radius then
-                            actor:K2_DestroyActor()
+                            SafeDestroyActor(actor)
                             cleaned = cleaned + 1
                         end
-                    end)
+                    end
                 end
             end
         end
@@ -606,16 +624,16 @@ function ForceAggroAll()
         local Pawn = PC.Pawn
         if not Pawn or not Pawn:IsValid() then return end
 
-        local PlayerLoc = Pawn:K2_GetActorLocation()
+        local PlayerLoc = SafeActorLocation(Pawn)
+        if not PlayerLoc then return end
         local candidates = {}
 
         for _, className in ipairs(GetPhaseClasses()) do
             local actors = FindAllOf(className)
             if actors then
                 for _, actor in ipairs(actors) do
-                    pcall(function()
-                        if not actor:IsValid() then return end
-                        local loc = actor:K2_GetActorLocation()
+                    local loc = SafeActorLocation(actor)
+                    if loc then
                         local dx = loc.X - PlayerLoc.X
                         local dy = loc.Y - PlayerLoc.Y
                         local dz = loc.Z - PlayerLoc.Z
@@ -623,7 +641,7 @@ function ForceAggroAll()
                         if dist < 25000 then
                             table.insert(candidates, {actor = actor, dist = dist})
                         end
-                    end)
+                    end
                 end
             end
         end
@@ -667,31 +685,34 @@ local function StartCreatureCleanup()
             if not PC or not PC:IsValid() then return end
             local Pawn = PC.Pawn
             if not Pawn or not Pawn:IsValid() then return end
-            local PlayerLoc = Pawn:K2_GetActorLocation()
-            local destroyed = 0
+            local PlayerLoc = SafeActorLocation(Pawn)
+            if not PlayerLoc then return end
+
+            local toDestroy = {}
 
             for _, className in ipairs(GetPhaseClasses()) do
                 local actors = FindAllOf(className)
                 if actors then
                     for _, actor in ipairs(actors) do
-                        pcall(function()
-                            if not actor:IsValid() then return end
-                            local loc = actor:K2_GetActorLocation()
+                        local loc = SafeActorLocation(actor)
+                        if loc then
                             local dx = loc.X - PlayerLoc.X
                             local dy = loc.Y - PlayerLoc.Y
                             local dz = loc.Z - PlayerLoc.Z
-                            local dist = math.sqrt(dx*dx + dy*dy + dz*dz)
-                            if dist > CLEANUP_DISTANCE then
-                                actor:K2_DestroyActor()
-                                destroyed = destroyed + 1
+                            if math.sqrt(dx*dx + dy*dy + dz*dz) > CLEANUP_DISTANCE then
+                                table.insert(toDestroy, actor)
                             end
-                        end)
+                        end
                     end
                 end
             end
 
-            if destroyed > 0 then
-                print(string.format("[EE] Cleaned up %d distant creatures\n", destroyed))
+            for _, actor in ipairs(toDestroy) do
+                SafeDestroyActor(actor)
+            end
+
+            if #toDestroy > 0 then
+                print(string.format("[EE] Cleaned up %d distant creatures\n", #toDestroy))
             end
         end)
 
@@ -707,7 +728,8 @@ end
 
 -- Execute a wave (one or more groups with stagger)
 
-local function ExecuteWave(phaseNum)
+local function ExecuteWave(phaseNum, tag)
+    if SpawnTag ~= tag then return end
     local config = PhaseConfig[phaseNum]
     if not config then return end
 
@@ -722,8 +744,8 @@ local function ExecuteWave(phaseNum)
         local nextWaveDelay = RandRange(config.waveInterval[1], config.waveInterval[2]) * 1000
         ExecuteWithDelay(nextWaveDelay, function()
             ExecuteInGameThread(function()
-                if ActivePhase >= phaseNum then
-                    ExecuteWave(phaseNum)
+                if SpawnTag == tag then
+                    ExecuteWave(phaseNum, tag)
                 end
             end)
         end)
@@ -783,9 +805,9 @@ local function ExecuteWave(phaseNum)
 
     ExecuteWithDelay(totalDelay, function()
         ExecuteInGameThread(function()
-            if ActivePhase >= phaseNum then
+            if SpawnTag == tag then
                 print(string.format("[EE] Repeat wave for Phase %d (active phase: %d)\n", phaseNum, ActivePhase))
-                ExecuteWave(phaseNum)
+                ExecuteWave(phaseNum, tag)
             end
         end)
     end)
@@ -793,17 +815,17 @@ end
 
 -- False alarm glitches (no spawn, just visual)
 
-local function ScheduleFalseAlarms(phaseNum)
+local function ScheduleFalseAlarms(phaseNum, tag)
     local intervals = {
-        [1] = {90, 120},
-        [2] = {45, 60},
-        [3] = {20, 30},
-        [4] = {10, 15},
+        [1] = {90, 150},
+        [2] = {60, 90},
+        [3] = {40, 60},
+        [4] = {30, 50},
     }
     local interval = intervals[phaseNum] or {60, 90}
 
     local function DoFalseAlarm()
-        if ActivePhase ~= phaseNum then return end
+        if SpawnTag ~= tag then return end
 
         if math.random() < 0.3 then
             ExecuteInGameThread(function()
@@ -862,6 +884,7 @@ RegisterConsoleCommandHandler("ee_phase", function(FullCommand, Parameters)
 
     if phaseNum == 0 then
         ActivePhase = 0
+        SpawnTag = SpawnTag + 1
         if EE_SetAtmospherePhase then EE_SetAtmospherePhase(0) end
         if EE_SetVisorPhase then EE_SetVisorPhase(0) end
         if EE_ResetLore then EE_ResetLore() end
@@ -870,6 +893,8 @@ RegisterConsoleCommandHandler("ee_phase", function(FullCommand, Parameters)
     end
 
     ActivePhase = phaseNum
+    SpawnTag = SpawnTag + 1
+    local tag = SpawnTag
 
     print(string.format("[EE] === PHASE %d ACTIVATED ===\n", phaseNum))
 
@@ -883,13 +908,13 @@ RegisterConsoleCommandHandler("ee_phase", function(FullCommand, Parameters)
 
     ExecuteWithDelay(initialDelay, function()
         ExecuteInGameThread(function()
-            if ActivePhase >= phaseNum then
-                ExecuteWave(phaseNum)
+            if SpawnTag == tag then
+                ExecuteWave(phaseNum, tag)
             end
         end)
     end)
 
-    ScheduleFalseAlarms(phaseNum)
+    ScheduleFalseAlarms(phaseNum, tag)
     StartCreatureCleanup()
 
     return true

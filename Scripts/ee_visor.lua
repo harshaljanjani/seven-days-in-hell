@@ -735,6 +735,9 @@ local function ShutdownVisor()
     end
     MissionComplete = false
     MissionCompleteTag = MissionCompleteTag + 1
+    for _, name in ipairs(AllNames) do
+        FadeGen[name] = (FadeGen[name] or 0) + 1
+    end
     ZeroAllWidgets()
     HudVisible = false
     VisorBooted = false
@@ -814,9 +817,32 @@ local function UpdateHud()
     if MenuHidden then return end
 end
 
+local function IsPlayerDead()
+    local dead = false
+    pcall(function()
+        local PC = UEHelpers.GetPlayerController()
+        if not PC or not PC:IsValid() then return end
+        local Pawn = PC.Pawn
+        if not Pawn or not Pawn:IsValid() then dead = true; return end
+        local hsc = Pawn.HealthSetComponent
+        if hsc and hsc:IsValid() then
+            local hp = hsc:GetHealth()
+            if hp and hp <= 0 then dead = true end
+        end
+    end)
+    return dead
+end
+
 local function SurfaceTick()
     ExecuteInGameThread(function()
-        if MissionComplete or not VisorBooted or not HudVisible or MenuHidden then
+        if MissionComplete or not VisorBooted or not HudVisible or MenuHidden or IsPlayerDead() then
+            if SurfaceWarnShowing or BaseWarnShowing then
+                SurfaceWarnShowing = false
+                SurfaceElapsed = 0
+                BaseWarnShowing = false
+                BaseElapsed = 0
+                FadeElement("VisorSurfaceWarn", GetOpacity("VisorSurfaceWarn"), 0, 200)
+            end
             ExecuteWithDelay(SURFACE_TICK, SurfaceTick)
             return
         end

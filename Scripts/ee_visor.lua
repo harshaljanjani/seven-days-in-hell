@@ -396,7 +396,24 @@ local function TriggerPhaseLore(phase)
     end
     local day = GetDayNumber()
     if day >= 6 and EE_UnlockLoreEntry then EE_UnlockLoreEntry(5) end
-    local messages = PhaseLore[phase]
+    local eta = math.max(1, TOTAL_DAYS - day)
+    local etaStr = string.format("%d day%s", eta, eta == 1 and "" or "s")
+    local messages
+    if phase == 0 then
+        messages = {
+            "Biosensor calibrated. Toxin monitoring enabled.",
+            "Mission: Document ecological anomaly on 4546B.",
+            string.format("Rescue vessel dispatched. ETA: %s.", etaStr),
+        }
+    elseif phase == 4 then
+        messages = {
+            "Emergency: Void boundary integrity failure confirmed.",
+            "Leviathan-class organisms breaching into inhabited waters.",
+            string.format("Cicada command signal lost. Rescue ETA: %s. Survive.", etaStr),
+        }
+    else
+        messages = PhaseLore[phase]
+    end
     if messages then
         QueueMessages(messages)
         ProcessMessageQueue()
@@ -574,17 +591,23 @@ local function TriggerMissionComplete()
                     if MissionCompleteTag ~= tag or not MissionComplete then return end
                     if EE_Slomo then EE_Slomo(0.15) end
 
+                    MessageQueue = {}
+                    MessageActive = false
                     SetText("VisorGlitchText", "MISSION COMPLETE")
-                    FadeElement("VisorGlitchText", 0, 1.0, 1500, function()
+                    SetText("VisorMessage", "Press F10 to restart")
+                    FadeElement("VisorGlitchText", 0, 1.0, 1500)
+                    FadeElement("VisorMessage", 0, 1.0, 1500, function()
                         local function Pulse()
                             if MissionCompleteTag ~= tag or not MissionComplete then return end
                             if MenuHidden then
                                 ExecuteWithDelay(300, function() ExecuteInGameThread(Pulse) end)
                                 return
                             end
-                            FadeElement("VisorGlitchText", 1.0, 0.3, 600, function()
+                            FadeElement("VisorGlitchText", 1.0, 0.3, 600)
+                            FadeElement("VisorMessage", 1.0, 0.3, 600, function()
                                 if MissionCompleteTag ~= tag or not MissionComplete then return end
-                                FadeElement("VisorGlitchText", 0.3, 1.0, 600, function()
+                                FadeElement("VisorGlitchText", 0.3, 1.0, 600)
+                                FadeElement("VisorMessage", 0.3, 1.0, 600, function()
                                     Pulse()
                                 end)
                             end)
@@ -600,7 +623,7 @@ end
 local function WriteHudText()
     local day = GetDayNumber()
 
-    if day > TOTAL_DAYS and not MissionComplete then
+    if day > TOTAL_DAYS and not MissionComplete and VisorPhase >= 1 then
         TriggerMissionComplete()
     end
 
@@ -686,16 +709,20 @@ local function BootVisor()
                 if EE_Slomo then EE_Slomo(0.15) end
                 if EE_StartMissionFade then EE_StartMissionFade(3) end
                 SetText("VisorGlitchText", "MISSION COMPLETE")
+                SetText("VisorMessage", "Press F10 to restart")
                 SetOpacity("VisorGlitchText", 1.0)
+                SetOpacity("VisorMessage", 1.0)
                 local function Pulse()
                     if MissionCompleteTag ~= tag or not MissionComplete then return end
                     if MenuHidden then
                         ExecuteWithDelay(300, function() ExecuteInGameThread(Pulse) end)
                         return
                     end
-                    FadeElement("VisorGlitchText", 1.0, 0.3, 600, function()
+                    FadeElement("VisorGlitchText", 1.0, 0.3, 600)
+                    FadeElement("VisorMessage", 1.0, 0.3, 600, function()
                         if MissionCompleteTag ~= tag or not MissionComplete then return end
-                        FadeElement("VisorGlitchText", 0.3, 1.0, 600, function()
+                        FadeElement("VisorGlitchText", 0.3, 1.0, 600)
+                        FadeElement("VisorMessage", 0.3, 1.0, 600, function()
                             Pulse()
                         end)
                     end)
@@ -719,7 +746,7 @@ local function BootVisor()
                 if VisorBooted then
                     HudVisible = true
                     if day > 1 then
-                        QueueMessages({"Field protocol designed for day 1 deployment.", "New game recommended for full experience."})
+                        QueueMessages({"PERISH-COPE is calibrated for Day 1. Start a new game for the full experience. Press F10 to reset."})
                     end
                     TriggerPhaseLore(VisorPhase)
                 end
@@ -805,6 +832,7 @@ local function UpdateHud()
         if VisorBooted then HudVisible = true end
         if MissionComplete then
             FadeElement("VisorGlitchText", 0, 1.0, 200)
+            FadeElement("VisorMessage", 0, 1.0, 200)
         else
             for _, name in ipairs(HudNames) do
                 FadeElement(name, 0, 1.0, 200)
@@ -949,8 +977,10 @@ function EE_OnLoreToggle(isOpen)
     if not MissionComplete then return end
     if isOpen then
         FadeElement("VisorGlitchText", GetOpacity("VisorGlitchText"), 0, 200)
+        FadeElement("VisorMessage", GetOpacity("VisorMessage"), 0, 200)
     else
         FadeElement("VisorGlitchText", 0, 1.0, 200)
+        FadeElement("VisorMessage", 0, 1.0, 200)
     end
 end
 

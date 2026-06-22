@@ -35,6 +35,9 @@ local Leviathans = {
     "/Game/Blueprints/AI/Agents/VoidLeviathan/BP_VoidLeviathanChild.BP_VoidLeviathanChild_C",
 }
 
+local Leviathan_Set = {}
+for _, v in ipairs(Leviathans) do Leviathan_Set[v] = true end
+
 -- Phase configs
 local PhaseConfig = {
     [1] = {
@@ -737,9 +740,15 @@ local function ExecuteWave(phaseNum, tag)
     if isWildcard and CumulativePools[phaseNum] then
         local count = RandRange(2, 4)
         local creatures = PickRandomN(CumulativePools[phaseNum], count)
-        local dist = RandFloat(2000, 5000)
-        print(string.format("[EE] WILDCARD wave for Phase %d - %d random creatures\n", phaseNum, count))
-        SpawnGroup(creatures, dist, -500, -1200)
+        local hasLeviathan = false
+        for _, path in ipairs(creatures) do
+            if Leviathan_Set[path] then hasLeviathan = true; break end
+        end
+        local dist = hasLeviathan and RandFloat(15000, 25000) or RandFloat(2000, 5000)
+        local zMin = hasLeviathan and -1500 or -500
+        local zMax = hasLeviathan and -3000 or -1200
+        print(string.format("[EE] WILDCARD wave for Phase %d - %d random creatures%s\n", phaseNum, count, hasLeviathan and " (leviathan)" or ""))
+        SpawnGroup(creatures, dist, zMin, zMax)
 
         local nextWaveDelay = RandRange(config.waveInterval[1], config.waveInterval[2]) * 1000
         ExecuteWithDelay(nextWaveDelay, function()

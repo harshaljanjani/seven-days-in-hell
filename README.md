@@ -3,6 +3,12 @@
 <p align="center">
   <img width="400" height="400" alt="Seven Days In Hell" src="https://i.ibb.co/84Btch4f/Seven-Days-In-Hell.png" />
 </p>
+<img alt="1" src="https://github.com/user-attachments/assets/8701c424-f274-45dd-aaf0-e48a1f1f74a9" />
+<img alt="2" src="https://github.com/user-attachments/assets/1d32f992-1d95-40c6-a470-34299940ca6b" />
+<img alt="3" src="https://github.com/user-attachments/assets/ef2bbaf6-4ab6-44c7-b337-ca550f604040" />
+<img alt="4" src="https://github.com/user-attachments/assets/86318907-e579-423c-865c-44ced8e56237" />
+
+### About
 
 Three years ago, Alterra Colonial Sciences deployed a lone xenogeologist to Sector 4546B-7 to investigate an ecological anomaly. His name was Dr. Elias Voss. He was a solo operative. No support team, no backup extraction, no second chances. He lasted seven days. His final transmission was severely degraded, the only fragment recovered contained four words: "seven days in hell". Every observation he made, every warning he tried to leave behind: gone. But the visor he built from salvaged sensor equipment survived. Alterra repaired the firmware but could not recover Voss's notes.
 
